@@ -402,19 +402,22 @@ fi
 
 log "packaging"
 
-# the artifact is the nginx binary itself, nothing else: no conf/ tree, no
-# empty log/temp directories, no install prefix
+# the archive holds exactly one file: the statically linked nginx binary.
+# no conf/ tree, no empty log/temp directories, no install prefix.
 PKG_NAME="nginx-$NGINX_VERSION-$MACHINE-linux-$LIBC-static"
-OUT_FILE="$OUT_DIR/$PKG_NAME"
+STAGE="$WORK_DIR/stage-$ARCH"
 
-install -m 755 "$BIN" "$OUT_FILE"
-"$STRIP" -s "$OUT_FILE"
+rm -rf "$STAGE"
+install -d "$STAGE"
+install -m 755 "$BIN" "$STAGE/$PKG_NAME"
+"$STRIP" -s "$STAGE/$PKG_NAME"
 
 CONF_ARGS="$(sed -n 's/^#define NGX_CONFIGURE "\(.*\)"/\1/p' objs/ngx_auto_config.h)"
 
 {
     echo
-    echo "==> package:   $OUT_FILE"
+    echo "==> package:   $OUT_DIR/$PKG_NAME.tar.gz"
+    echo "    contents:  $PKG_NAME (the nginx binary)"
     echo "    nginx:     $NGINX_VERSION"
     echo "    target:    $MACHINE / linux / $LIBC / statically linked"
     echo "    toolchain: $("$CC" --version | head -n 1)"
@@ -429,11 +432,18 @@ CONF_ARGS="$(sed -n 's/^#define NGX_CONFIGURE "\(.*\)"/\1/p' objs/ngx_auto_confi
 } >&2
 
 (
-    cd "$OUT_DIR"
-    sha256sum "$PKG_NAME" > "$PKG_NAME.sha256"
+    cd "$STAGE"
+    tar -czf "$OUT_DIR/$PKG_NAME.tar.gz" "$PKG_NAME"
 )
 
-file "$OUT_FILE" || true
+(
+    cd "$OUT_DIR"
+    sha256sum "$PKG_NAME.tar.gz" > "$PKG_NAME.tar.gz.sha256"
+)
 
-log "artifact: $OUT_FILE"
+rm -rf "$STAGE"
+
+tar -tzf "$OUT_DIR/$PKG_NAME.tar.gz"
+
+log "artifact: $OUT_DIR/$PKG_NAME.tar.gz"
 ls -l "$OUT_DIR"
