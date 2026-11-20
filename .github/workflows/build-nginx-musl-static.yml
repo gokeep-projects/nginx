@@ -1,7 +1,7 @@
 name: Build nginx (static, musl)
 
 # Builds fully static nginx binaries with musl libc for
-#   x86_64, aarch64, loongarch64, mips (all musl)
+#   x86_64, aarch64, loongarch64, mips, mips64, mips64el (all musl)
 # and, if an external toolchain is configured, sw_64 (glibc).
 #
 # The musl cross toolchains are taken from
@@ -107,6 +107,27 @@ jobs:
             sizeof_long: '4'
             sizeof_pointer: '4'
             sizeof_size_t: '4'
+          # 64 bit MIPS, n64 ABI (LP64)
+          - arch: mips64
+            machine: mips64
+            triple: mips64-unknown-linux-musl
+            openssl_target: linux64-mips64
+            qemu: ''
+            runnable: '0'
+            patch_run_tests: '1'
+            force_endian: big
+          # OpenSSL has no linux64-mips64el target: little endian is the
+          # L_ENDIAN define, and the MIPS assembler is left out because its
+          # byte order handling cannot be checked on this host.
+          - arch: mips64el
+            machine: mips64el
+            triple: mips64el-unknown-linux-musl
+            openssl_target: linux64-mips64
+            extra_openssl_opt: '-DL_ENDIAN no-asm'
+            qemu: ''
+            runnable: '0'
+            patch_run_tests: '1'
+            force_endian: little
 
     steps:
       - uses: actions/checkout@v4
@@ -165,6 +186,7 @@ jobs:
           CROSS: ${{ matrix.triple }}-
           TRIPLE: ${{ matrix.triple }}
           OPENSSL_TARGET: ${{ matrix.openssl_target }}
+          EXTRA_OPENSSL_OPT: ${{ matrix.extra_openssl_opt || '' }}
           RUNNABLE: ${{ matrix.runnable }}
           PATCH_RUN_TESTS: ${{ matrix.patch_run_tests }}
           FORCE_ENDIAN: ${{ matrix.force_endian || '' }}
@@ -334,6 +356,8 @@ jobs:
             | aarch64 | musl | static |
             | loongarch64 | musl | static |
             | mips (o32, big endian) | musl | static |
+            | mips64 (n64, big endian) | musl | static |
+            | mips64el (n64, little endian) | musl | static |
             | sw_64 | external toolchain | only built when `SW64_TOOLCHAIN_URL` is set |
 
             Every tarball is self-contained:
