@@ -343,7 +343,7 @@ set -- \
 # word splitting is intended here
 set -- "$@" $SSL_MODULES $EXTRA_CONF_OPT
 
-PATH="$FAKE_BIN:$PATH" ./configure "$@"
+PATH="$FAKE_BIN:$PATH" ./auto/configure "$@"
 
 
 if [ "$PATCH_RUN_TESTS" = "1" ]; then
