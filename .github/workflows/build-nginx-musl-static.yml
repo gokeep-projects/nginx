@@ -323,8 +323,8 @@ jobs:
   release:
     name: Publish release
     needs: [build, build-sw64]
-    # both sw_64 jobs are skipped unless a toolchain or a native runner is
-    # configured, so a skip must not block the release
+    # the sw_64 job is skipped unless a toolchain is configured, so a skip
+    # must not block the release
     if: |
       !cancelled() && needs.build.result == 'success' &&
       (startsWith(github.ref, 'refs/tags/') ||
@@ -340,15 +340,36 @@ jobs:
       - name: List artifacts
         run: ls -lR artifacts
 
+      # older releases shipped tar.gz trees; drop them so the release holds
+      # exactly one binary per target
+      - name: Remove stale archives
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('nginx-{0}', needs.build.outputs.version) }}
+        run: |
+          set -euo pipefail
+          api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY"
+          rel=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                     -H "Accept: application/vnd.github+json" \
+                     "$api/releases/tags/$TAG") || exit 0
+          printf '%s' "$rel" |
+            jq -r '.assets[] | select(.name | test("\\.tar\\.gz")) | .id' |
+            while read -r id; do
+              [ -n "$id" ] || continue
+              echo "removing stale asset $id"
+              curl -fsSL -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+                   "$api/releases/assets/$id"
+            done
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('nginx-{0}', needs.build.outputs.version) }}
-          name: nginx ${{ needs.build.outputs.version }} (static, musl)
+          name: nginx ${{ needs.build.outputs.version }} (static)
           files: artifacts/*
           fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
-            Statically linked nginx ${{ needs.build.outputs.version }} builds.
+            Statically linked nginx ${{ needs.build.outputs.version }} binaries, one file per target.
 
             | target | libc | notes |
             | --- | --- | --- |
@@ -360,10 +381,9 @@ jobs:
             | mips64el (n64, little endian) | musl | static |
             | sw_64 | glibc | built when a Sunway cross toolchain is configured (`SW64_TOOLCHAIN_URL`) |
 
-            Every tarball is self-contained:
+            Each asset is the nginx executable alone (plus its `.sha256`):
 
             ```sh
-            tar -xzf nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static.tar.gz
-            cd nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static
-            ./sbin/nginx -p "$PWD" -c conf/nginx.conf
+            chmod +x nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static
+            ./nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static -V
             ```

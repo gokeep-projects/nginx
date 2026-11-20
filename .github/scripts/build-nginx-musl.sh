@@ -402,65 +402,38 @@ fi
 
 log "packaging"
 
+# the artifact is the nginx binary itself, nothing else: no conf/ tree, no
+# empty log/temp directories, no install prefix
 PKG_NAME="nginx-$NGINX_VERSION-$MACHINE-linux-$LIBC-static"
-STAGE="$WORK_DIR/stage-$ARCH"
-PKG_ROOT="$WORK_DIR/pkg"
+OUT_FILE="$OUT_DIR/$PKG_NAME"
 
-rm -rf "$STAGE"
-install -d "$STAGE"
-make install DESTDIR="$STAGE" >/dev/null
-
-PREFIX_DIR="$STAGE/usr/local/nginx"
-[ -x "$PREFIX_DIR/sbin/nginx" ] || die "make install did not install sbin/nginx"
-
-# nginx does not create these on startup
-for d in logs client_body_temp proxy_temp fastcgi_temp uwsgi_temp scgi_temp; do
-    install -d "$PREFIX_DIR/$d"
-done
-
-"$STRIP" -s "$PREFIX_DIR/sbin/nginx"
+install -m 755 "$BIN" "$OUT_FILE"
+"$STRIP" -s "$OUT_FILE"
 
 CONF_ARGS="$(sed -n 's/^#define NGX_CONFIGURE "\(.*\)"/\1/p' objs/ngx_auto_config.h)"
 
 {
-    echo "nginx:      $NGINX_VERSION"
-    echo "target:     $MACHINE / linux / $LIBC / statically linked"
-    echo "toolchain:  $("$CC" --version | head -n 1)"
-    echo "pcre2:      $PCRE2_VERSION (static)"
-    echo "zlib:       $ZLIB_VERSION (static)"
+    echo
+    echo "==> package:   $OUT_FILE"
+    echo "    nginx:     $NGINX_VERSION"
+    echo "    target:    $MACHINE / linux / $LIBC / statically linked"
+    echo "    toolchain: $("$CC" --version | head -n 1)"
+    echo "    pcre2:     $PCRE2_VERSION (static)"
+    echo "    zlib:      $ZLIB_VERSION (static)"
     if [ "$WITH_OPENSSL" = "1" ]; then
-        echo "openssl:    $OPENSSL_VERSION (static, $OPENSSL_TARGET)"
+        echo "    openssl:   $OPENSSL_VERSION (static, $OPENSSL_TARGET)"
     else
-        echo "openssl:    disabled"
+        echo "    openssl:   disabled"
     fi
-    echo "configure:  $CONF_ARGS"
-    echo
-    echo "run with:   ./sbin/nginx -p \"\$PWD\" -c conf/nginx.conf -g 'daemon off;'"
-    echo
-    if [ "$RUNNABLE" = "1" ]; then
-        echo "nginx -V:"
-        "$BIN" -V 2>&1
-    fi
-} > "$PREFIX_DIR/BUILD-INFO.txt"
-
-cp "$SRC_DIR/LICENSE" "$PREFIX_DIR/LICENSE"
-
-rm -rf "$PKG_ROOT/$PKG_NAME"
-install -d "$PKG_ROOT"
-mv "$PREFIX_DIR" "$PKG_ROOT/$PKG_NAME"
-rm -rf "$STAGE"
-
-(
-    cd "$PKG_ROOT"
-    tar -czf "$OUT_DIR/$PKG_NAME.tar.gz" "$PKG_NAME"
-)
+    echo "    configure: $CONF_ARGS"
+} >&2
 
 (
     cd "$OUT_DIR"
-    sha256sum "$PKG_NAME.tar.gz" > "$PKG_NAME.tar.gz.sha256"
+    sha256sum "$PKG_NAME" > "$PKG_NAME.sha256"
 )
 
-file "$PKG_ROOT/$PKG_NAME/sbin/nginx" || true
+file "$OUT_FILE" || true
 
-log "artifact: $OUT_DIR/$PKG_NAME.tar.gz"
+log "artifact: $OUT_FILE"
 ls -l "$OUT_DIR"
