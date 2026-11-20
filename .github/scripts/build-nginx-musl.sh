@@ -39,7 +39,8 @@
 
 set -euo pipefail
 
-log() { printf '\n==> %s\n' "$*"; }
+# logs go to stderr, stdout is used to return values from the helpers below
+log() { printf '\n==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 # make CI logs point at the failing command
