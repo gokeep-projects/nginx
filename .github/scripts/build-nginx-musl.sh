@@ -168,8 +168,8 @@ if [ ! -f "$SYSROOT/lib/libpcre2-8.a" ]; then
         [ -f src/pcre2.h ] || cp src/pcre2.h.generic src/pcre2.h
 
         make -j"$JOBS" libpcre2-8.la
-        install -Dm 644 src/pcre2.h "$SYSROOT/include/pcre2.h"
-        install -Dm 644 .libs/libpcre2-8.a "$SYSROOT/lib/libpcre2-8.a"
+        install -D -m 644 src/pcre2.h "$SYSROOT/include/pcre2.h"
+        install -D -m 644 .libs/libpcre2-8.a "$SYSROOT/lib/libpcre2-8.a"
     )
 fi
 
