@@ -402,24 +402,24 @@ fi
 
 log "packaging"
 
-# the archive holds exactly one file: the statically linked nginx binary.
-# no conf/ tree, no empty log/temp directories, no install prefix.
+# dist/ holds the artifact exactly as it should be consumed: the statically
+# linked nginx binary itself.  The Actions artifact zip therefore contains
+# that one file, and the release assets are the same files.
 PKG_NAME="nginx-$NGINX_VERSION-$MACHINE-linux-$LIBC-static"
-STAGE="$WORK_DIR/stage-$ARCH"
+OUT_FILE="$OUT_DIR/$PKG_NAME"
 
-rm -rf "$STAGE"
-install -d "$STAGE"
-install -m 755 "$BIN" "$STAGE/$PKG_NAME"
-"$STRIP" -s "$STAGE/$PKG_NAME"
+install -m 755 "$BIN" "$OUT_FILE"
+"$STRIP" -s "$OUT_FILE"
 
+SHA256="$(sha256sum "$OUT_FILE" | cut -d' ' -f1)"
 CONF_ARGS="$(sed -n 's/^#define NGX_CONFIGURE "\(.*\)"/\1/p' objs/ngx_auto_config.h)"
 
 {
     echo
-    echo "==> package:   $OUT_DIR/$PKG_NAME.tar.gz"
-    echo "    contents:  $PKG_NAME (the nginx binary)"
+    echo "==> package:   $OUT_FILE"
     echo "    nginx:     $NGINX_VERSION"
     echo "    target:    $MACHINE / linux / $LIBC / statically linked"
+    echo "    sha256:    $SHA256"
     echo "    toolchain: $("$CC" --version | head -n 1)"
     echo "    pcre2:     $PCRE2_VERSION (static)"
     echo "    zlib:      $ZLIB_VERSION (static)"
@@ -431,19 +431,17 @@ CONF_ARGS="$(sed -n 's/^#define NGX_CONFIGURE "\(.*\)"/\1/p' objs/ngx_auto_confi
     echo "    configure: $CONF_ARGS"
 } >&2
 
-(
-    cd "$STAGE"
-    tar -czf "$OUT_DIR/$PKG_NAME.tar.gz" "$PKG_NAME"
-)
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+        echo "### nginx $NGINX_VERSION $MACHINE"
+        echo
+        echo '```'
+        echo "$SHA256  $PKG_NAME"
+        echo '```'
+    } >> "$GITHUB_STEP_SUMMARY"
+fi
 
-(
-    cd "$OUT_DIR"
-    sha256sum "$PKG_NAME.tar.gz" > "$PKG_NAME.tar.gz.sha256"
-)
+file "$OUT_FILE" || true
 
-rm -rf "$STAGE"
-
-tar -tzf "$OUT_DIR/$PKG_NAME.tar.gz"
-
-log "artifact: $OUT_DIR/$PKG_NAME.tar.gz"
+log "artifact: $OUT_FILE"
 ls -l "$OUT_DIR"

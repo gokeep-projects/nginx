@@ -340,8 +340,8 @@ jobs:
       - name: List artifacts
         run: ls -lR artifacts
 
-      # keep exactly one format in the release: drop assets that are not a
-      # tar.gz package or its checksum (older runs shipped bare binaries)
+      # the release only ever holds the binaries themselves: drop archives or
+      # checksum files left by older runs
       - name: Remove stale assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -353,7 +353,7 @@ jobs:
                      -H "Accept: application/vnd.github+json" \
                      "$api/releases/tags/$TAG") || exit 0
           printf '%s' "$rel" |
-            jq -r '.assets[] | select(.name | test("\\.tar\\.gz") | not) | .id' |
+            jq -r '.assets[] | select(.name | test("\\.tar\\.gz$|\\.sha256$")) | .id' |
             while read -r id; do
               [ -n "$id" ] || continue
               echo "removing stale asset $id"
@@ -381,10 +381,11 @@ jobs:
             | mips64el (n64, little endian) | musl | static |
             | sw_64 | glibc | built when a Sunway cross toolchain is configured (`SW64_TOOLCHAIN_URL`) |
 
-            Every asset is a `.tar.gz` holding exactly one file, the statically
-            linked `nginx` binary (plus a separate `.sha256`):
+            Every asset is the statically linked nginx binary itself, no archive
+            and no checksum file (the archive `.zip` on the Actions run page is
+            GitHub's own wrapper around the same file):
 
             ```sh
-            tar -xzf nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static.tar.gz
+            chmod +x nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static
             ./nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static -V
             ```
