@@ -1,0 +1,267 @@
+name: Build nginx (static, musl)
+
+# Builds fully static nginx binaries with musl libc for
+#   x86_64, aarch64, loongarch64, mips
+# and, if an external toolchain is configured, sw_64.
+#
+# The musl cross toolchains are taken from
+#   https://github.com/cross-tools/musl-cross/releases
+# pcre2, zlib and OpenSSL are built from source and linked statically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      openssl:
+        description: 'Bundle a static OpenSSL (TLS/HTTP2 support)'
+        type: boolean
+        default: true
+      publish_release:
+        description: 'Attach the artifacts to a GitHub Release'
+        type: boolean
+        default: false
+      tag:
+        description: 'Release tag (empty: nginx-<version>)'
+        type: string
+        default: ''
+  push:
+    branches:
+      - master
+      - main
+      - 'nginx-*'
+    tags:
+      - 'nginx-*'
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  # https://github.com/cross-tools/musl-cross/releases
+  MUSL_CROSS_RELEASE: '20261001'
+
+  PCRE2_VERSION: '10.49'
+  ZLIB_VERSION: '1.3.2'
+  OPENSSL_VERSION: '3.5.9'
+
+jobs:
+  build:
+    name: nginx ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            machine: x86_64
+            triple: x86_64-unknown-linux-musl
+            openssl_target: linux-x86_64
+            qemu: ''
+          - arch: aarch64
+            machine: aarch64
+            triple: aarch64-unknown-linux-musl
+            openssl_target: linux-aarch64
+            qemu: aarch64
+          - arch: loongarch64
+            machine: loongarch64
+            triple: loongarch64-unknown-linux-musl
+            openssl_target: linux64-loongarch64
+            qemu: loongarch64
+          - arch: mips
+            machine: mips
+            triple: mips-unknown-linux-musl
+            openssl_target: linux-mips32
+            qemu: mips
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve nginx version
+        id: version
+        run: |
+          version=$(sed -n 's/^#define NGINX_VERSION  *"\(.*\)"/\1/p' src/core/nginx.h)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "NGINX_VERSION=$version" >> "$GITHUB_ENV"
+
+      # nginx's configure runs small test programs; qemu-user lets us run the
+      # cross-compiled (statically linked) ones so that feature detection,
+      # byte order and sizeof() are determined correctly.
+      - name: Set up QEMU
+        if: matrix.qemu != ''
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.qemu }}
+
+      - name: Cache toolchain and dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nginx-musl/dl
+          key: nginx-musl-dl-${{ matrix.arch }}-${{ env.MUSL_CROSS_RELEASE }}-${{ env.PCRE2_VERSION }}-${{ env.ZLIB_VERSION }}-${{ env.OPENSSL_VERSION }}
+
+      - name: Install ${{ matrix.arch }} musl toolchain
+        run: |
+          set -euo pipefail
+
+          dl="$RUNNER_TEMP/nginx-musl/dl"
+          tc="$RUNNER_TEMP/toolchain-${{ matrix.arch }}"
+          mkdir -p "$dl" "$tc"
+
+          tarball="$dl/${{ matrix.triple }}.tar.xz"
+
+          if [ ! -s "$tarball" ]; then
+            curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+              -o "$tarball.part" \
+              "https://github.com/cross-tools/musl-cross/releases/download/${MUSL_CROSS_RELEASE}/${{ matrix.triple }}.tar.xz"
+            mv "$tarball.part" "$tarball"
+          fi
+
+          tar -xf "$tarball" -C "$tc"
+
+          gcc=$(find "$tc" -maxdepth 5 \( -type f -o -type l \) -name '${{ matrix.triple }}-gcc' | head -n 1)
+          test -n "$gcc"
+          dirname "$gcc" >> "$GITHUB_PATH"
+          "$gcc" --version | head -n 1
+
+      - name: Build nginx
+        env:
+          ARCH: ${{ matrix.arch }}
+          MACHINE: ${{ matrix.machine }}
+          CROSS: ${{ matrix.triple }}-
+          TRIPLE: ${{ matrix.triple }}
+          OPENSSL_TARGET: ${{ matrix.openssl_target }}
+          # '1' on tag pushes, otherwise the workflow_dispatch input
+          WITH_OPENSSL: ${{ (github.event_name != 'workflow_dispatch' || inputs.openssl) && '1' || '0' }}
+        run: bash .github/scripts/build-nginx-musl.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-${{ env.NGINX_VERSION }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  # musl has no upstream sw_64 port and QEMU cannot emulate sw_64, so this
+  # target needs an externally supplied toolchain, e.g. Sunway's:
+  #
+  #   repository variables:
+  #     SW64_TOOLCHAIN_URL     tarball with the cross toolchain
+  #     SW64_TOOLCHAIN_PREFIX  sw_64-sunway-linux-gnu-
+  #     SW64_TARGET_TRIPLE     sw_64-linux-gnu          (optional)
+  #     SW64_LIBC              musl | gnu               (optional, default musl)
+  #
+  # Without SW64_TOOLCHAIN_URL the job is skipped.
+  build-sw64:
+    name: nginx sw_64 (external toolchain)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    if: vars.SW64_TOOLCHAIN_URL != ''
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve nginx version
+        id: version
+        run: |
+          version=$(sed -n 's/^#define NGINX_VERSION  *"\(.*\)"/\1/p' src/core/nginx.h)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "NGINX_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install sw_64 toolchain
+        env:
+          TOOLCHAIN_URL: ${{ vars.SW64_TOOLCHAIN_URL }}
+          TOOLCHAIN_PREFIX: ${{ vars.SW64_TOOLCHAIN_PREFIX }}
+        run: |
+          set -euo pipefail
+
+          dl="$RUNNER_TEMP/nginx-musl/dl"
+          tc="$RUNNER_TEMP/toolchain-sw_64"
+          mkdir -p "$dl" "$tc"
+
+          tarball="$dl/sw_64-toolchain.tar"
+
+          if [ ! -s "$tarball" ]; then
+            curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
+              -o "$tarball.part" "$TOOLCHAIN_URL"
+            mv "$tarball.part" "$tarball"
+          fi
+
+          tar -xf "$tarball" -C "$tc"
+
+          gcc=$(find "$tc" -maxdepth 6 \( -type f -o -type l \) -name "${TOOLCHAIN_PREFIX}gcc" | head -n 1)
+          test -n "$gcc"
+          dirname "$gcc" >> "$GITHUB_PATH"
+          "$gcc" --version | head -n 1
+
+      - name: Build nginx
+        env:
+          ARCH: sw_64
+          MACHINE: sw_64
+          CROSS: ${{ vars.SW64_TOOLCHAIN_PREFIX }}
+          TRIPLE: ${{ vars.SW64_TARGET_TRIPLE }}
+          LIBC: ${{ vars.SW64_LIBC }}
+          # no QEMU for sw_64, and no OpenSSL target for it either
+          RUNNABLE: '0'
+          PATCH_RUN_TESTS: '1'
+          FORCE_ENDIAN: little
+          WITH_OPENSSL: '0'
+        run: bash .github/scripts/build-nginx-musl.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nginx-${{ env.NGINX_VERSION }}-sw_64
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [build, build-sw64]
+    # build-sw64 is skipped unless a sw_64 toolchain is configured, so it must
+    # not block the release; only a failed or cancelled build does.
+    if: |
+      !cancelled() && needs.build.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/') ||
+       (github.event_name == 'workflow_dispatch' && inputs.publish_release))
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lR artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || format('nginx-{0}', needs.build.outputs.version) }}
+          name: nginx ${{ needs.build.outputs.version }} (static, musl)
+          files: artifacts/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            Statically linked nginx ${{ needs.build.outputs.version }} builds.
+
+            | target | libc | notes |
+            | --- | --- | --- |
+            | x86_64 | musl | static |
+            | aarch64 | musl | static |
+            | loongarch64 | musl | static |
+            | mips (o32, big endian) | musl | static |
+            | sw_64 | see artifact name | static, external toolchain |
+
+            Every tarball is self-contained:
+
+            ```sh
+            tar -xzf nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static.tar.gz
+            cd nginx-${{ needs.build.outputs.version }}-x86_64-linux-musl-static
+            ./sbin/nginx -p "$PWD" -c conf/nginx.conf
+            ```
