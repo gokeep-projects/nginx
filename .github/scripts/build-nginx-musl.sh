@@ -321,11 +321,23 @@ EOF
 chmod +x "$FAKE_BIN/uname"
 
 
+#
+# auto/cc/name links its test program before NGX_TEST_LD_OPT is set, so a
+# plain musl cross gcc would produce a dynamically linked binary with no musl
+# loader on the build host, and nginx would report that the compiler does not
+# work.  The final binary is static anyway, so force it for every link.
+#
+
+CC_WRAPPER="$WORK_DIR/cc-$ARCH"
+printf '#!/bin/sh\nexec "%s" -static "$@"\n' "$CC" > "$CC_WRAPPER"
+chmod +x "$CC_WRAPPER"
+
+
 log "configuring nginx"
 
 set -- \
     --prefix=/usr/local/nginx \
-    --with-cc="$CC" \
+    --with-cc="$CC_WRAPPER" \
     --with-threads \
     --with-http_realip_module \
     --with-http_stub_status_module \
