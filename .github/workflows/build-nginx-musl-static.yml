@@ -320,73 +320,9 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  # Native build on a self-hosted sw_64 machine.  This is the way to get an
-  # sw_64 package without a cross toolchain: register a runner on any sw_64
-  # Linux host (Kylin, UOS, ...) and set the repository variable
-  # SW64_NATIVE_RUNNER to that runner's label.
-  build-sw64-native:
-    name: nginx sw_64 (native runner)
-    runs-on: ${{ vars.SW64_NATIVE_RUNNER }}
-    if: vars.SW64_NATIVE_RUNNER != ''
-    timeout-minutes: 120
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Resolve nginx version
-        id: version
-        run: |
-          version=$(sed -n 's/^#define NGINX_VERSION  *"\(.*\)"/\1/p' src/core/nginx.h)
-          test -n "$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "NGINX_VERSION=$version" >> "$GITHUB_ENV"
-
-      - name: Show host
-        run: uname -a && gcc --version | head -n 1 && ldd --version | head -n 1
-
-      - name: Build nginx
-        env:
-          ARCH: sw_64
-          MACHINE: sw_64
-          # empty CROSS means "use the native compiler on this machine"
-          CROSS: ''
-          TRIPLE: ${{ vars.SW64_TARGET_TRIPLE }}
-          LIBC: gnu
-          # there is no OpenSSL target for sw_64, set SW64_NATIVE_OPENSSL=1
-          # together with OPENSSL_TARGET/EXTRA_OPENSSL_OPT if one exists
-          WITH_OPENSSL: '0'
-        shell: bash
-        run: |
-          bash .github/scripts/build-nginx-musl.sh 2>&1 | tee build.log
-
-      - name: Diagnostics
-        if: failure()
-        run: |
-          {
-            echo "### nginx sw_64 native build failed"
-            echo
-            echo '```'
-            tail -n 150 build.log 2>/dev/null || echo "no build.log"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          { grep -iE 'error|fatal|cannot|not found|undefined' build.log | tail -n 6
-            tail -n 6 build.log
-          } 2>/dev/null | awk '!seen[$0]++' | cut -c1-250 | tail -n 8 |
-          while IFS= read -r line; do echo "::error::$line"; done
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: nginx-${{ env.NGINX_VERSION }}-sw_64
-          path: dist/*
-          if-no-files-found: error
-
   release:
     name: Publish release
-    needs: [build, build-sw64, build-sw64-native]
+    needs: [build, build-sw64]
     # both sw_64 jobs are skipped unless a toolchain or a native runner is
     # configured, so a skip must not block the release
     if: |
@@ -422,7 +358,7 @@ jobs:
             | mips (o32, big endian) | musl | static |
             | mips64 (n64, big endian) | musl | static |
             | mips64el (n64, little endian) | musl | static |
-            | sw_64 | glibc | Sunway cross toolchain (`SW64_TOOLCHAIN_URL`) or a self-hosted sw_64 runner (`SW64_NATIVE_RUNNER`) |
+            | sw_64 | glibc | built when a Sunway cross toolchain is configured (`SW64_TOOLCHAIN_URL`) |
 
             Every tarball is self-contained:
 
