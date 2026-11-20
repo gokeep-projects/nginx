@@ -70,6 +70,17 @@ AR="${CROSS}ar"
 RANLIB="${CROSS}ranlib"
 READELF="${CROSS}readelf"
 
+# an external toolchain may be supplied without a prefix ("install this tarball
+# and use its gcc"), so fall back to what the compiler reports about itself
+if [ -z "$TRIPLE" ]; then
+    TRIPLE="$("$CC" -dumpmachine 2>/dev/null || true)"
+fi
+[ -n "$TRIPLE" ] || die "TRIPLE is required (set TRIPLE or use a CROSS prefix)"
+
+if ! command -v "$STRIP" >/dev/null 2>&1; then
+    STRIP="$("$CC" -print-prog-name=strip 2>/dev/null || echo "$STRIP")"
+fi
+
 SRC_DIR="$(cd "${SRC_DIR:-$PWD}" && pwd)"
 WORK_DIR="${WORK_DIR:-${RUNNER_TEMP:-/tmp}/nginx-musl}"
 DL_DIR="$WORK_DIR/dl"

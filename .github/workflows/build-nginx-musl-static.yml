@@ -23,6 +23,21 @@ on:
         description: 'Release tag (empty: nginx-<version>)'
         type: string
         default: ''
+      # sw_64 has no public musl port and no upstream gcc/glibc support, so it
+      # needs an external (Sunway) cross toolchain.  These inputs override the
+      # repository variables of the same name for a single run.
+      sw64_toolchain_url:
+        description: 'sw_64 cross toolchain tarball URL (enables the sw_64 build)'
+        type: string
+        default: ''
+      sw64_toolchain_prefix:
+        description: 'sw_64 toolchain prefix, e.g. sw_64-linux-gnu-'
+        type: string
+        default: ''
+      sw64_target_triple:
+        description: 'sw_64 target triple (empty: ask gcc -dumpmachine)'
+        type: string
+        default: ''
   push:
     branches:
       - master
@@ -201,7 +216,7 @@ jobs:
     name: nginx sw_64 (external toolchain)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    if: vars.SW64_TOOLCHAIN_URL != ''
+    if: vars.SW64_TOOLCHAIN_URL != '' || inputs.sw64_toolchain_url != ''
     outputs:
       version: ${{ steps.version.outputs.version }}
 
@@ -218,8 +233,8 @@ jobs:
 
       - name: Install sw_64 toolchain
         env:
-          TOOLCHAIN_URL: ${{ vars.SW64_TOOLCHAIN_URL }}
-          TOOLCHAIN_PREFIX: ${{ vars.SW64_TOOLCHAIN_PREFIX }}
+          TOOLCHAIN_URL: ${{ inputs.sw64_toolchain_url || vars.SW64_TOOLCHAIN_URL }}
+          TOOLCHAIN_PREFIX: ${{ inputs.sw64_toolchain_prefix || vars.SW64_TOOLCHAIN_PREFIX }}
         run: |
           set -euo pipefail
 
@@ -246,8 +261,8 @@ jobs:
         env:
           ARCH: sw_64
           MACHINE: sw_64
-          CROSS: ${{ vars.SW64_TOOLCHAIN_PREFIX }}
-          TRIPLE: ${{ vars.SW64_TARGET_TRIPLE }}
+          CROSS: ${{ inputs.sw64_toolchain_prefix || vars.SW64_TOOLCHAIN_PREFIX }}
+          TRIPLE: ${{ inputs.sw64_target_triple || vars.SW64_TARGET_TRIPLE }}
           # musl has no sw_64 port, so the external toolchain is glibc based
           # unless the variable says otherwise
           LIBC: ${{ vars.SW64_LIBC || 'gnu' }}
