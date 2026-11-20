@@ -42,6 +42,9 @@ set -euo pipefail
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+# make CI logs point at the failing command
+trap 'printf "\nerror: %s failed (line %s)\n" "$BASH_COMMAND" "$LINENO" >&2' ERR
+
 : "${ARCH:?ARCH is required}"
 : "${MACHINE:?MACHINE is required}"
 : "${CROSS:?CROSS is required}"
@@ -77,7 +80,7 @@ JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
 # the build host, used as --build for the bundled libraries
 BUILD_TRIPLE="$(uname -m)-pc-linux-gnu"
 
-mkdir -p "$DL_DIR" "$DEPS_DIR" "$SYSROOT" "$OUT_DIR"
+mkdir -p "$DL_DIR" "$DEPS_DIR" "$SYSROOT/include" "$SYSROOT/lib" "$OUT_DIR"
 
 if [ -z "$NGINX_VERSION" ]; then
     NGINX_VERSION="$(sed -n 's/^#define NGINX_VERSION  *"\(.*\)"/\1/p' \
@@ -164,8 +167,8 @@ if [ ! -f "$SYSROOT/lib/libpcre2-8.a" ]; then
         [ -f src/pcre2.h ] || cp src/pcre2.h.generic src/pcre2.h
 
         make -j"$JOBS" libpcre2-8.la
-        install -m 644 src/pcre2.h "$SYSROOT/include/pcre2.h"
-        install -m 644 .libs/libpcre2-8.a "$SYSROOT/lib/libpcre2-8.a"
+        install -Dm 644 src/pcre2.h "$SYSROOT/include/pcre2.h"
+        install -Dm 644 .libs/libpcre2-8.a "$SYSROOT/lib/libpcre2-8.a"
     )
 fi
 
