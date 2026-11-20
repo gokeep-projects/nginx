@@ -48,7 +48,8 @@ trap 'printf "\nerror: %s failed (line %s)\n" "$BASH_COMMAND" "$LINENO" >&2' ERR
 
 : "${ARCH:?ARCH is required}"
 : "${MACHINE:?MACHINE is required}"
-: "${CROSS:?CROSS is required}"
+# CROSS may be empty: that is a native build on the target machine
+CROSS="${CROSS:-}"
 
 LIBC="${LIBC:-musl}"
 NGINX_VERSION="${NGINX_VERSION:-}"
@@ -88,9 +89,6 @@ DEPS_DIR="$WORK_DIR/deps"
 SYSROOT="$WORK_DIR/sysroot-$ARCH"
 OUT_DIR="${OUT_DIR:-$SRC_DIR/dist}"
 JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
-
-# the build host, used as --build for the bundled libraries
-BUILD_TRIPLE="$(uname -m)-pc-linux-gnu"
 
 mkdir -p "$DL_DIR" "$DEPS_DIR" "$SYSROOT/include" "$SYSROOT/lib" "$OUT_DIR"
 
@@ -171,7 +169,6 @@ if [ ! -f "$SYSROOT/lib/libpcre2-8.a" ]; then
 
         ./configure \
             --host="$TRIPLE" \
-            --build="$BUILD_TRIPLE" \
             --prefix="$SYSROOT" \
             --disable-shared --enable-static
 
@@ -221,11 +218,17 @@ if [ "$WITH_OPENSSL" = "1" ]; then
                 make clean >/dev/null 2>&1 || true
             fi
 
+            # only meaningful for a cross build, OpenSSL rejects an empty one
+            ssl_prefix=
+            if [ -n "$CROSS" ]; then
+                ssl_prefix="--cross-compile-prefix=$CROSS"
+            fi
+
             ./Configure "$OPENSSL_TARGET" \
                 --prefix="$SYSROOT" \
                 --openssldir="$SYSROOT/ssl" \
                 --libdir=lib \
-                --cross-compile-prefix="$CROSS" \
+                $ssl_prefix \
                 no-shared no-tests no-docs no-comp no-async \
                 $EXTRA_OPENSSL_OPT
 
