@@ -248,7 +248,9 @@ jobs:
           MACHINE: sw_64
           CROSS: ${{ vars.SW64_TOOLCHAIN_PREFIX }}
           TRIPLE: ${{ vars.SW64_TARGET_TRIPLE }}
-          LIBC: ${{ vars.SW64_LIBC }}
+          # musl has no sw_64 port, so the external toolchain is glibc based
+          # unless the variable says otherwise
+          LIBC: ${{ vars.SW64_LIBC || 'gnu' }}
           # no QEMU for sw_64, and no OpenSSL target for it either
           RUNNABLE: '0'
           PATCH_RUN_TESTS: '1'
@@ -317,7 +319,7 @@ jobs:
             | aarch64 | musl | static |
             | loongarch64 | musl | static |
             | mips (o32, big endian) | musl | static |
-            | sw_64 | see artifact name | static, external toolchain |
+            | sw_64 | external toolchain | only built when `SW64_TOOLCHAIN_URL` is set |
 
             Every tarball is self-contained:
 
