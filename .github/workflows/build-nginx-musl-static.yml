@@ -135,7 +135,21 @@ jobs:
           OPENSSL_TARGET: ${{ matrix.openssl_target }}
           # '1' on tag pushes, otherwise the workflow_dispatch input
           WITH_OPENSSL: ${{ (github.event_name != 'workflow_dispatch' || inputs.openssl) && '1' || '0' }}
-        run: bash .github/scripts/build-nginx-musl.sh
+        shell: bash
+        run: |
+          bash .github/scripts/build-nginx-musl.sh 2>&1 | tee build.log
+
+      # keeps the failure readable in the run page without signing in
+      - name: Diagnostics
+        if: failure()
+        run: |
+          {
+            echo "### nginx ${{ matrix.arch }} build failed"
+            echo
+            echo '```'
+            tail -n 150 build.log 2>/dev/null || echo "no build.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -211,7 +225,20 @@ jobs:
           PATCH_RUN_TESTS: '1'
           FORCE_ENDIAN: little
           WITH_OPENSSL: '0'
-        run: bash .github/scripts/build-nginx-musl.sh
+        shell: bash
+        run: |
+          bash .github/scripts/build-nginx-musl.sh 2>&1 | tee build.log
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          {
+            echo "### nginx sw_64 build failed"
+            echo
+            echo '```'
+            tail -n 150 build.log 2>/dev/null || echo "no build.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
