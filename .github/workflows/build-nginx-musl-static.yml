@@ -60,21 +60,38 @@ jobs:
             triple: x86_64-unknown-linux-musl
             openssl_target: linux-x86_64
             qemu: ''
+            runnable: '1'
+            patch_run_tests: '0'
           - arch: aarch64
             machine: aarch64
             triple: aarch64-unknown-linux-musl
             openssl_target: linux-aarch64
             qemu: aarch64
+            runnable: '1'
+            patch_run_tests: '0'
+          # qemu-user has no big endian mips and no loongarch64 in the binfmt
+          # image used by setup-qemu-action, so these two are configured
+          # without running the test programs (see PATCH_RUN_TESTS).
           - arch: loongarch64
             machine: loongarch64
             triple: loongarch64-unknown-linux-musl
             openssl_target: linux64-loongarch64
-            qemu: loongarch64
+            qemu: ''
+            runnable: '0'
+            patch_run_tests: '1'
+            force_endian: little
           - arch: mips
             machine: mips
             triple: mips-unknown-linux-musl
             openssl_target: linux-mips32
-            qemu: mips
+            qemu: ''
+            runnable: '0'
+            patch_run_tests: '1'
+            force_endian: big
+            # o32, ILP32
+            sizeof_long: '4'
+            sizeof_pointer: '4'
+            sizeof_size_t: '4'
 
     steps:
       - uses: actions/checkout@v4
@@ -133,6 +150,12 @@ jobs:
           CROSS: ${{ matrix.triple }}-
           TRIPLE: ${{ matrix.triple }}
           OPENSSL_TARGET: ${{ matrix.openssl_target }}
+          RUNNABLE: ${{ matrix.runnable }}
+          PATCH_RUN_TESTS: ${{ matrix.patch_run_tests }}
+          FORCE_ENDIAN: ${{ matrix.force_endian || '' }}
+          SIZEOF_LONG: ${{ matrix.sizeof_long || '' }}
+          SIZEOF_POINTER: ${{ matrix.sizeof_pointer || '' }}
+          SIZEOF_SIZE_T: ${{ matrix.sizeof_size_t || '' }}
           # '1' on tag pushes, otherwise the workflow_dispatch input
           WITH_OPENSSL: ${{ (github.event_name != 'workflow_dispatch' || inputs.openssl) && '1' || '0' }}
         shell: bash
