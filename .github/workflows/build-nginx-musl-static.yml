@@ -1,8 +1,8 @@
 name: Build nginx (static, musl)
 
 # Builds fully static nginx binaries with musl libc for
-#   x86_64, aarch64, loongarch64, mips
-# and, if an external toolchain is configured, sw_64.
+#   x86_64, aarch64, loongarch64, mips (all musl)
+# and, if an external toolchain is configured, sw_64 (glibc).
 #
 # The musl cross toolchains are taken from
 #   https://github.com/cross-tools/musl-cross/releases
@@ -209,7 +209,7 @@ jobs:
   #     SW64_TOOLCHAIN_URL     tarball with the cross toolchain
   #     SW64_TOOLCHAIN_PREFIX  sw_64-sunway-linux-gnu-
   #     SW64_TARGET_TRIPLE     sw_64-linux-gnu          (optional)
-  #     SW64_LIBC              musl | gnu               (optional, default musl)
+  #     SW64_LIBC              gnu (musl has no sw_64 port; optional)
   #
   # Without SW64_TOOLCHAIN_URL the job is skipped.
   build-sw64:
