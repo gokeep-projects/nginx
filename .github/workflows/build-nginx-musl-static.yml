@@ -151,6 +151,12 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+          # annotations are visible in the run page HTML, the log is not
+          { grep -iE 'error|fatal|cannot|not found|undefined' build.log | tail -n 6
+            tail -n 6 build.log
+          } 2>/dev/null | awk '!seen[$0]++' | cut -c1-250 | tail -n 8 |
+          while IFS= read -r line; do echo "::error::$line"; done
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -239,6 +245,11 @@ jobs:
             tail -n 150 build.log 2>/dev/null || echo "no build.log"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+          { grep -iE 'error|fatal|cannot|not found|undefined' build.log | tail -n 6
+            tail -n 6 build.log
+          } 2>/dev/null | awk '!seen[$0]++' | cut -c1-250 | tail -n 8 |
+          while IFS= read -r line; do echo "::error::$line"; done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
